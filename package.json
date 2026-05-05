@@ -2,17 +2,17 @@
   "name": "ai-dnd-assistant",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "Full-stack AI-powered Dungeons & Dragons Assistant",
   "scripts": {
-    "install:all": "npm install --prefix server && npm install --prefix client",
-    "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
-    "build": "npm run build --prefix client",
-    "start": "npm run start --prefix server"
-  },
-  "devDependencies": {
-    "concurrently": "^9.0.1"
+    "dev": "node --watch server.js",
+    "start": "node server.js"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.24.1"
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "morgan": "^1.10.0",
+    "openai": "^4.57.0"
   }
 }

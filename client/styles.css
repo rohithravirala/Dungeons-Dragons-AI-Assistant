@@ -111,6 +111,17 @@ body {
   background-color: rgba(13, 20, 47, 0.95);
 }
 
+.form-field textarea {
+  border: 1px solid rgba(148, 157, 255, 0.35);
+  border-radius: 10px;
+  padding: 0.58rem 0.72rem;
+  color: #eef1ff;
+  background-color: rgba(13, 20, 47, 0.95);
+  resize: vertical;
+  min-height: 110px;
+  font-family: inherit;
+}
+
 .btn-generate {
   border: none;
   border-radius: 10px;
@@ -138,6 +149,52 @@ body {
   margin-top: 0;
 }
 
+.result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-bottom: 0.6rem;
+}
+
+.result-head h3 {
+  margin: 0;
+}
+
+.btn-copy {
+  border: 1px solid rgba(148, 157, 255, 0.38);
+  border-radius: 8px;
+  padding: 0.35rem 0.65rem;
+  background: rgba(111, 116, 255, 0.16);
+  color: #dfe2ff;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.btn-copy:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  border: 1px solid rgba(148, 157, 255, 0.38);
+  border-radius: 10px;
+  padding: 0.5rem 0.85rem;
+  background: rgba(111, 116, 255, 0.16);
+  color: #e3e7ff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.whole-story-card {
+  margin-top: 1rem;
+}
+
+.whole-story-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .state {
   margin: 0;
   font-size: 0.92rem;
@@ -158,18 +215,7 @@ body {
 .markdown-output {
   font-size: 0.92rem;
   color: #e8ebff;
-}
-
-.markdown-output h1,
-.markdown-output h2,
-.markdown-output h3,
-.markdown-output h4 {
-  color: #cad1ff;
-}
-
-.markdown-output ul,
-.markdown-output ol {
-  padding-left: 1.2rem;
+  white-space: pre-wrap;
 }
 
 @media (max-width: 720px) {

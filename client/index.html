@@ -4,9 +4,160 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>D&D AI Assistant</title>
+    <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <main class="app-shell">
+      <header class="hero">
+        <h1>🛡️ AI Dungeons & Dragons Assistant</h1>
+        <p>Create campaign worlds, heroes, and quests with a single click.</p>
+      </header>
+
+      <aside class="prompt-hints">
+        <h3>Sample Prompt Ideas</h3>
+        <div class="prompt-grid">
+          <div>
+            <h4>Campaign</h4>
+            <ul>
+              <li>Theme: Eldritch ocean mystery, Tone: dark heroic, Difficulty: hard</li>
+              <li>Theme: Sky-pirate rebellion, Tone: swashbuckling, Difficulty: medium</li>
+            </ul>
+          </div>
+          <div>
+            <h4>Character</h4>
+            <ul>
+              <li>Character type: Arcane Trickster, Level: 5, Backstory style: tragic redemption</li>
+              <li>Character type: Circle of Stars Druid, Level: 3, Backstory style: wonder-driven explorer</li>
+            </ul>
+          </div>
+          <div>
+            <h4>Quest</h4>
+            <ul>
+              <li>Objective: rescue missing diplomat, Location: volcanic monastery, Threat: high</li>
+              <li>Objective: recover cursed relic, Location: feywild ruins, Threat: medium</li>
+            </ul>
+          </div>
+        </div>
+      </aside>
+
+      <div class="grid-layout">
+        <section class="section-card" id="campaign-section">
+          <header class="section-card__header">
+            <h2>Generate Campaign</h2>
+            <p>Craft immersive campaign arcs with tone, setting, and challenge level.</p>
+          </header>
+          <form class="generator-form" data-kind="campaign">
+            <label class="form-field"><span>Theme</span><input type="text" name="theme" placeholder="E.g. Forgotten gods awakening" required /></label>
+            <label class="form-field"><span>Tone</span><input type="text" name="tone" placeholder="E.g. Grim heroic fantasy" required /></label>
+            <label class="form-field"><span>Difficulty</span><input type="text" name="difficulty" placeholder="E.g. Hard" required /></label>
+            <label class="form-field"><span>Setting</span><input type="text" name="setting" placeholder="E.g. Floating archipelago city-states" /></label>
+            <label class="form-field"><span>Play Length</span><input type="text" name="playLength" placeholder="E.g. 6 sessions" /></label>
+            <button class="btn-generate" type="submit">Generate Campaign</button>
+          </form>
+          <div class="result-display">
+            <div class="result-head">
+              <h3>Campaign Output</h3>
+              <button class="btn-copy" type="button" data-copy-for="campaign" disabled>Copy</button>
+            </div>
+            <div class="output-slot" data-output-kind="campaign">
+              <p class="state idle">Generated content will appear here.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section-card" id="character-section">
+          <header class="section-card__header">
+            <h2>Create Character</h2>
+            <p>Build memorable adventurers with strong roleplay hooks.</p>
+          </header>
+          <form class="generator-form" data-kind="character">
+            <label class="form-field"><span>Character Type</span><input type="text" name="characterType" placeholder="E.g. Hexblade warlock" required /></label>
+            <label class="form-field"><span>Level</span><input type="text" name="level" placeholder="E.g. 4" required /></label>
+            <label class="form-field"><span>Backstory Style</span><input type="text" name="backstoryStyle" placeholder="E.g. Noble fall from grace" required /></label>
+            <label class="form-field"><span>Alignment</span><input type="text" name="alignment" placeholder="E.g. Chaotic Good" /></label>
+            <label class="form-field"><span>Party Role</span><input type="text" name="partyRole" placeholder="E.g. Frontline controller" /></label>
+            <button class="btn-generate" type="submit">Generate Character</button>
+          </form>
+          <div class="result-display">
+            <div class="result-head">
+              <h3>Character Output</h3>
+              <button class="btn-copy" type="button" data-copy-for="character" disabled>Copy</button>
+            </div>
+            <div class="output-slot" data-output-kind="character">
+              <p class="state idle">Generated content will appear here.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section-card" id="quest-section">
+          <header class="section-card__header">
+            <h2>Quest Builder</h2>
+            <p>Design action-ready quests with encounters and rewards.</p>
+          </header>
+          <form class="generator-form" data-kind="quest">
+            <label class="form-field"><span>Objective</span><input type="text" name="objective" placeholder="E.g. Retrieve moonstone idol" required /></label>
+            <label class="form-field"><span>Location</span><input type="text" name="location" placeholder="E.g. Ruined observatory" required /></label>
+            <label class="form-field"><span>Threat Level</span><input type="text" name="threatLevel" placeholder="E.g. Medium" required /></label>
+            <label class="form-field"><span>Reward Style</span><input type="text" name="rewardStyle" placeholder="E.g. Legendary relic" /></label>
+            <label class="form-field"><span>Time Pressure</span><input type="text" name="timePressure" placeholder="E.g. Eclipse in 3 days" /></label>
+            <button class="btn-generate" type="submit">Generate Quest</button>
+          </form>
+          <div class="result-display">
+            <div class="result-head">
+              <h3>Quest Output</h3>
+              <button class="btn-copy" type="button" data-copy-for="quest" disabled>Copy</button>
+            </div>
+            <div class="output-slot" data-output-kind="quest">
+              <p class="state idle">Generated content will appear here.</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section class="section-card whole-story-card" id="whole-story-section">
+        <header class="section-card__header">
+          <h2>Generate Whole Story</h2>
+          <p>Paste campaign, character, and quest outputs to weave one complete cinematic story.</p>
+        </header>
+
+        <form class="generator-form" id="whole-story-form">
+          <div class="whole-story-actions">
+            <button class="btn-secondary" type="button" id="fill-from-outputs">Use Current Outputs</button>
+          </div>
+
+          <label class="form-field">
+            <span>Campaign Output (paste here)</span>
+            <textarea name="campaignOutput" rows="6" placeholder="Paste campaign output..."></textarea>
+          </label>
+
+          <label class="form-field">
+            <span>Character Output (paste here)</span>
+            <textarea name="characterOutput" rows="6" placeholder="Paste character output..."></textarea>
+          </label>
+
+          <label class="form-field">
+            <span>Quest Output (paste here)</span>
+            <textarea name="questOutput" rows="6" placeholder="Paste quest output..."></textarea>
+          </label>
+
+          <label class="form-field"><span>Story Tone (optional)</span><input type="text" name="storyTone" placeholder="E.g. Epic cinematic with emotional depth" /></label>
+          <label class="form-field"><span>Story Length (optional)</span><input type="text" name="storyLength" placeholder="E.g. 700-1000 words" /></label>
+
+          <button class="btn-generate" type="submit">Generate Whole Story</button>
+        </form>
+
+        <div class="result-display">
+          <div class="result-head">
+            <h3>Whole Story Output</h3>
+            <button class="btn-copy" type="button" data-copy-for="whole-story" disabled>Copy</button>
+          </div>
+          <div class="output-slot" data-output-kind="whole-story">
+            <p class="state idle">Your combined story will appear here.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
   </body>
 </html>
