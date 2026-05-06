@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>D&D AI Assistant</title>
     <link rel="stylesheet" href="./styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   </head>
   <body>
     <main class="app-shell">
@@ -140,8 +141,8 @@
             <textarea name="questOutput" rows="6" placeholder="Paste quest output..."></textarea>
           </label>
 
-          <label class="form-field"><span>Story Tone (optional)</span><input type="text" name="storyTone" placeholder="E.g. Epic cinematic with emotional depth" /></label>
-          <label class="form-field"><span>Story Length (optional)</span><input type="text" name="storyLength" placeholder="E.g. 700-1000 words" /></label>
+          <label class="form-field"><span>Story Tone</span><input type="text" name="storyTone" value="Cinematic, epic, and emotionally resonant" placeholder="E.g. Epic cinematic with emotional depth" /></label>
+          <label class="form-field"><span>Story Length (words)</span><input type="number" name="storyLength" value="5000" placeholder="E.g. 5000" /></label>
 
           <button class="btn-generate" type="submit">Generate Whole Story</button>
         </form>

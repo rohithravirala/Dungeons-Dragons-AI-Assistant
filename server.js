@@ -4,7 +4,6 @@ import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
-import OpenAI from 'openai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,7 +13,12 @@ dotenv.config({ path: path.join(__dirname, 'server/.env') });
 
 const DEFAULT_WEBHOOK_URL = 'https://demouser001.app.n8n.cloud/webhook/generate-character';
 const DEFAULT_TIMEOUT_MS = 120000;
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const N8N_STORY_TIMEOUT_MS = 5000;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const GEMINI_FALLBACK_MODELS = (process.env.GEMINI_FALLBACK_MODELS || 'gemini-2.0-flash,gemini-2.5-flash-lit')
+  .split(',')
+  .map((model) => model.trim())
+  .filter(Boolean);
 const sessionMemory = new Map();
 const MAX_ENTRIES = 15;
 
@@ -46,9 +50,6 @@ function getWebhookUrl() {
   return process.env.N8N_WEBHOOK_URL || DEFAULT_WEBHOOK_URL;
 }
 
-function hasOpenAiKey() {
-  return Boolean(process.env.OPENAI_API_KEY && String(process.env.OPENAI_API_KEY).trim());
-}
 
 function getSessionId(req) {
   return req.body.sessionId || createSessionId();
@@ -149,29 +150,61 @@ ${sharedStyleInstructions()}
 
 function buildWholeStoryPrompt({ campaignOutput, characterOutput, questOutput, storyTone, storyLength }) {
   return `
-You are a master fantasy storyteller crafting one cohesive Dungeons & Dragons narrative.
+You are a master fantasy novelist and Dungeons & Dragons lorekeeper.
 
-You will merge three generated texts into one polished, cinematic story.
+Your task is to weave the provided campaign world, character history, and specific quest into one MASSIVE, cinematic narrative.
+
+Length Requirement: Aim for approximately ${storyLength || '5000'} words. Be extremely descriptive.
 
 Inputs:
-- Campaign Output:\n${campaignOutput}
-- Character Output:\n${characterOutput}
-- Quest Output:\n${questOutput}
+- Campaign Setting & Context:\n${campaignOutput}
+- Protagonist Backstory & Role:\n${characterOutput}
+- The Current Quest & Objective:\n${questOutput}
 
-Additional preferences:
-- Preferred tone: ${storyTone || 'Epic, emotional, immersive fantasy'}
-- Target length: ${storyLength || '700-1000 words'}
+Additional style guide:
+- Tone: ${storyTone || 'Cinematic, epic, and emotionally resonant'}
+- Structure: 
+  * Prologue: Set the stage of the world.
+  * Chapter 1: The Hero's Journey begins, connecting backstory to the world.
+  * Chapter 2: The Rising Tension—the quest's objective becomes personal.
+  * Chapter 3: The Climax—a detailed, high-stakes confrontation.
+  * Epilogue: Resolution and a hook for the future.
 
 Requirements:
-1. Keep consistency between world, character, and quest details.
-2. Make the character central in every major scene.
-3. Build clear progression: setup, tension, turning point, consequence, unresolved hook.
-4. Use vivid sensory details and cinematic prose.
-5. Preserve important facts from all three inputs while improving flow and quality.
+1. Maintain total consistency between all inputs.
+2. Use lush imagery and sensory descriptions (smell of ozone, weight of the air, internal monologues).
+3. Do not rush. Expand on character feelings and the environment.
+4. Return the content formatted as Markdown.
 
 Output:
-- Return only the final story text.
-- No headings, no labels, no explanations.
+- Return only the story text.
+- Use Markdown for headings and emphasis.
+`;
+}
+
+function buildStoryPrompt({ campaign, character, quest, storyControl }) {
+  const tone = storyControl?.tone || storyControl?.storyTone || 'cinematic fantasy';
+  const length = storyControl?.wordCount || storyControl?.words || storyControl?.storyLength || 400;
+
+  return `Generate a cinematic fantasy story using:
+
+- Campaign (theme, tone, setting, difficulty, play length)
+- Character (type, level, backstory, alignment, role)
+- Quest (objective, location, threat, reward, time)
+
+Rules:
+- Output must be ONE paragraph only
+- Use simple English
+- Smooth cinematic narration
+- Connect world + hero + mission
+- Story length: ${length} words
+- Tone: ${tone}
+
+Inputs:
+Campaign: ${JSON.stringify(campaign || {}, null, 2)}
+Character: ${JSON.stringify(character || {}, null, 2)}
+Quest: ${JSON.stringify(quest || {}, null, 2)}
+Story Control: ${JSON.stringify(storyControl || {}, null, 2)}
 `;
 }
 
@@ -292,47 +325,6 @@ function findTextInObject(value) {
   return '';
 }
 
-function getOpenAiClient() {
-  if (!process.env.OPENAI_API_KEY) {
-    const error = new Error('OPENAI_API_KEY is not set in environment variables.');
-    error.statusCode = 500;
-    throw error;
-  }
-
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-}
-
-function extractOpenAiText(response) {
-  if (response.output_text) {
-    return response.output_text;
-  }
-
-  const text = response.output
-    ?.flatMap((item) => item.content || [])
-    .map((contentPart) => contentPart.text)
-    .filter(Boolean)
-    .join('\n');
-
-  return text || 'No content returned from AI.';
-}
-
-async function createCompletion(prompt) {
-  try {
-    const client = getOpenAiClient();
-    const response = await client.responses.create({
-      model: OPENAI_MODEL,
-      input: prompt,
-      temperature: 0.95,
-      max_output_tokens: 950
-    });
-
-    return extractOpenAiText(response).trim();
-  } catch (error) {
-    const wrapped = new Error(error.message || 'Failed to generate content from AI service.');
-    wrapped.statusCode = error.status || 500;
-    throw wrapped;
-  }
-}
 
 async function callN8nWebhook({ type, prompt, input, sessionId }) {
   const controller = new AbortController();
@@ -347,6 +339,7 @@ async function callN8nWebhook({ type, prompt, input, sessionId }) {
       body: JSON.stringify({
         type,
         prompt,
+        ...input,
         input,
         sessionId,
         timestamp: new Date().toISOString()
@@ -363,14 +356,20 @@ async function callN8nWebhook({ type, prompt, input, sessionId }) {
     }
 
     let parsed;
+    let isJson = false;
     try {
       parsed = rawText ? JSON.parse(rawText) : {};
+      isJson = true;
     } catch {
       parsed = rawText;
     }
 
-    const extracted = findTextInObject(parsed) || findTextInObject(rawText);
-    if (!extracted) {
+    let extracted = findTextInObject(parsed);
+    if (!extracted && !isJson) {
+      extracted = rawText;
+    }
+
+    if (!extracted || extracted.trim() === '' || extracted.replace(/\s/g, '').includes('{"story":""}')) {
       const error = new Error('n8n webhook responded without generated content.');
       error.statusCode = 502;
       throw error;
@@ -396,13 +395,165 @@ async function callN8nWebhook({ type, prompt, input, sessionId }) {
   }
 }
 
+async function callN8N(data) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), N8N_STORY_TIMEOUT_MS);
+
+  try {
+    const prompt = buildStoryPrompt(data);
+    const response = await fetch(getWebhookUrl(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        type: 'whole-story',
+        prompt,
+        ...data,
+        input: data,
+        timestamp: new Date().toISOString()
+      }),
+      signal: controller.signal
+    });
+
+    const rawText = await response.text();
+
+    if (!response.ok) {
+      const error = new Error(`n8n webhook failed with status ${response.status}. ${rawText}`.trim());
+      error.statusCode = 502;
+      throw error;
+    }
+
+    let parsed;
+    let isJson = false;
+    try {
+      parsed = rawText ? JSON.parse(rawText) : {};
+      isJson = true;
+    } catch {
+      parsed = rawText;
+    }
+
+    let extracted = findTextInObject(parsed);
+    if (!extracted && !isJson) {
+      extracted = rawText;
+    }
+    
+    return extracted;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      const timeoutError = new Error('n8n webhook request timed out.');
+      timeoutError.statusCode = 504;
+      throw timeoutError;
+    }
+
+    if (error.code === 'ECONNREFUSED' || /fetch failed/i.test(error.message || '')) {
+      const networkError = new Error('Cannot reach n8n webhook. Ensure n8n is running and webhook URL is correct.');
+      networkError.statusCode = 502;
+      throw networkError;
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function isValidStory(response) {
+  if (!response || typeof response !== 'string') return false;
+  const noSpaces = response.replace(/\s/g, '');
+  if (noSpaces.includes('{"story":""}')) return false;
+  return response.trim().length > 20;
+}
+
+function getGeminiApiKey() {
+  if (!process.env.GEMINI_API_KEY) {
+    const error = new Error('GEMINI_API_KEY is not set in environment variables.');
+    error.statusCode = 500;
+    throw error;
+  }
+  return process.env.GEMINI_API_KEY;
+}
+
+async function callGeminiModel({ model, prompt }) {
+  const apiKey = getGeminiApiKey();
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.9,
+          topP: 0.9,
+          maxOutputTokens: 8192
+        }
+      })
+    }
+  );
+
+  const json = await response.json();
+
+  if (!response.ok) {
+    const error = new Error(json?.error?.message || `Gemini request failed with status ${response.status}`);
+    error.statusCode = response.status;
+    throw error;
+  }
+
+  const text = json?.candidates?.[0]?.content?.parts?.map((part) => part?.text).filter(Boolean).join('');
+  if (!text) {
+    const error = new Error('Gemini returned an empty response.');
+    error.statusCode = 502;
+    throw error;
+  }
+
+  return text.trim();
+}
+
+async function executeGeminiWithRetry(prompt) {
+  const models = [GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS.filter((model) => model !== GEMINI_MODEL)];
+
+  let lastError;
+  for (const model of models) {
+    try {
+      const result = await callGeminiModel({ model, prompt });
+      console.log(`Generated with Gemini model: ${model}`);
+      return result;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  const finalError = new Error(lastError?.message || 'All Gemini models failed.');
+  finalError.statusCode = lastError?.statusCode || 502;
+  throw finalError;
+}
+
+async function generateWithGemini(data) {
+  const prompt = buildStoryPrompt(data);
+  return executeGeminiWithRetry(prompt);
+}
+
+async function generateStory(data) {
+  try {
+    const n8nResponse = await callN8N(data);
+    if (isValidStory(n8nResponse)) {
+      console.log('Story generated using n8n webhook.');
+      return n8nResponse.trim();
+    }
+  } catch (error) {
+    console.log('n8n failed, switching to Gemini...');
+  }
+
+  const story = await generateWithGemini(data);
+  return story;
+}
+
 async function createAiContent({ type, prompt, input, sessionId }) {
   const provider = getProvider();
   const fallbackMode = getFallbackMode();
-
-  if (provider === 'openai') {
-    return createCompletion(prompt);
-  }
 
   if (provider === 'local') {
     return buildLocalFallback({ type, input });
@@ -411,14 +562,16 @@ async function createAiContent({ type, prompt, input, sessionId }) {
   try {
     return await callN8nWebhook({ type, prompt, input, sessionId });
   } catch (error) {
-    if (fallbackMode === 'openai' && hasOpenAiKey()) {
-      return createCompletion(prompt);
+    if (fallbackMode === 'gemini' && process.env.GEMINI_API_KEY) {
+      console.log(`n8n failed for ${type}, falling back to Gemini...`);
+      return executeGeminiWithRetry(prompt);
     }
 
     if (fallbackMode === 'none') {
       throw error;
     }
 
+    console.log(`n8n failed for ${type}, using local fallback...`);
     return buildLocalFallback({ type, input });
   }
 }
@@ -482,6 +635,29 @@ app.post('/api/generate-whole-story', (req, res, next) => {
     requiredFields: ['campaignOutput', 'characterOutput', 'questOutput'],
     promptBuilder: buildWholeStoryPrompt
   });
+});
+
+app.post('/api/generate-story', async (req, res, next) => {
+  try {
+    ensureFields(req.body, ['campaign', 'character', 'quest']);
+    const sessionId = getSessionId(req);
+    const story = await generateStory({
+      campaign: req.body.campaign,
+      character: req.body.character,
+      quest: req.body.quest,
+      storyControl: req.body.storyControl || {}
+    });
+
+    appendSessionEntry(sessionId, {
+      type: 'story',
+      input: req.body,
+      output: story
+    });
+
+    res.send(story);
+  } catch (error) {
+    next(error);
+  }
 });
 
 const clientDir = path.join(__dirname, 'client');
