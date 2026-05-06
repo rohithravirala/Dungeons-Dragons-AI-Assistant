@@ -637,6 +637,40 @@ app.post('/api/generate-whole-story', (req, res, next) => {
   });
 });
 
+app.post('/api/helper-suggestions', async (req, res, next) => {
+  try {
+    const prompt = `Generate a JSON object containing creative suggestions for a D&D campaign. 
+    Provide values for these keys: theme, tone, difficulty, setting, playLength, characterType, level, backstoryStyle, alignment, partyRole, objective, location, threatLevel, rewardStyle, timePressure.
+    Make the values specific and evocative.
+    Return ONLY valid JSON. No markdown formatting.`;
+
+    const rawJson = await executeGeminiWithRetry(prompt);
+    // Cleanup in case Gemini adds markdown backticks
+    const cleanJson = rawJson.replace(/```json|```/g, '').trim();
+    res.json(JSON.parse(cleanJson));
+  } catch (error) {
+    console.error('Chatbot helper error:', error);
+    // Fallback static data if Gemini fails
+    res.json({
+      theme: "Ancient machines awakening",
+      tone: "Steampunk mystery",
+      difficulty: "Challenging",
+      setting: "The Clockwork Spire",
+      playLength: "3-5 sessions",
+      characterType: "Mechanist Rogue",
+      level: "5",
+      backstoryStyle: "Forgotten inheritance",
+      alignment: "Neutral Good",
+      partyRole: "Tech Expert",
+      objective: "Disable the core",
+      location: "Central Gear Shaft",
+      threatLevel: "High",
+      rewardStyle: "Mechanical arm upgrade",
+      timePressure: "Ticking countdown"
+    });
+  }
+});
+
 app.post('/api/generate-story', async (req, res, next) => {
   try {
     ensureFields(req.body, ['campaign', 'character', 'quest']);
