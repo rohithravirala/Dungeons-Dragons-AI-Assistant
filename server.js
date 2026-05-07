@@ -14,8 +14,8 @@ dotenv.config({ path: path.join(__dirname, 'server/.env') });
 const DEFAULT_WEBHOOK_URL = 'https://demouser001.app.n8n.cloud/webhook/generate-character';
 const DEFAULT_TIMEOUT_MS = 120000;
 const N8N_STORY_TIMEOUT_MS = 5000;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-const GEMINI_FALLBACK_MODELS = (process.env.GEMINI_FALLBACK_MODELS || 'gemini-2.0-flash,gemini-2.5-flash-lit')
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const GROQ_FALLBACK_MODELS = (process.env.GROQ_FALLBACK_MODELS || 'llama-3.1-8b-instant,mixtral-8x7b-32768')
   .split(',')
   .map((model) => model.trim())
   .filter(Boolean);
@@ -469,31 +469,32 @@ function isValidStory(response) {
   return response.trim().length > 20;
 }
 
-function getGeminiApiKey() {
-  if (!process.env.GEMINI_API_KEY) {
-    const error = new Error('GEMINI_API_KEY is not set in environment variables.');
+function getGroqApiKey() {
+  if (!process.env.GROQ_API_KEY) {
+    const error = new Error('GROQ_API_KEY is not set in environment variables.');
     error.statusCode = 500;
     throw error;
   }
-  return process.env.GEMINI_API_KEY;
+  return process.env.GROQ_API_KEY;
 }
 
-async function callGeminiModel({ model, prompt }) {
-  const apiKey = getGeminiApiKey();
+async function callGroqModel({ model, prompt }) {
+  const apiKey = getGroqApiKey();
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    'https://api.groq.com/openai/v1/chat/completions',
     {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.9,
-          topP: 0.9,
-          maxOutputTokens: 8192
-        }
+        model,
+        messages: [
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 4096
       })
     }
   );
@@ -501,14 +502,14 @@ async function callGeminiModel({ model, prompt }) {
   const json = await response.json();
 
   if (!response.ok) {
-    const error = new Error(json?.error?.message || `Gemini request failed with status ${response.status}`);
+    const error = new Error(json?.error?.message || `Groq request failed with status ${response.status}`);
     error.statusCode = response.status;
     throw error;
   }
 
-  const text = json?.candidates?.[0]?.content?.parts?.map((part) => part?.text).filter(Boolean).join('');
+  const text = json?.choices?.[0]?.message?.content;
   if (!text) {
-    const error = new Error('Gemini returned an empty response.');
+    const error = new Error('Groq returned an empty response.');
     error.statusCode = 502;
     throw error;
   }
@@ -516,34 +517,34 @@ async function callGeminiModel({ model, prompt }) {
   return text.trim();
 }
 
-async function executeGeminiWithRetry(prompt) {
-  const models = [GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS.filter((model) => model !== GEMINI_MODEL)];
+async function executeGroqWithRetry(prompt) {
+  const models = [GROQ_MODEL, ...GROQ_FALLBACK_MODELS.filter((model) => model !== GROQ_MODEL)];
   const truncatedPrompt = prompt.length > 100 ? prompt.substring(0, 100) + '...' : prompt;
 
-  console.log(`[Gemini] Starting generation attempt. Prompt preview: "${truncatedPrompt}"`);
+  console.log(`[Groq] Starting generation attempt. Prompt preview: "${truncatedPrompt}"`);
 
   let lastError;
   for (const model of models) {
     try {
-      console.log(`[Gemini] Trying model: ${model}`);
-      const result = await callGeminiModel({ model, prompt });
-      console.log(`[Gemini] SUCCESS with model: ${model}`);
+      console.log(`[Groq] Trying model: ${model}`);
+      const result = await callGroqModel({ model, prompt });
+      console.log(`[Groq] SUCCESS with model: ${model}`);
       return result;
     } catch (error) {
-      console.error(`[Gemini] FAILED with model: ${model}. Error: ${error.message}`);
+      console.error(`[Groq] FAILED with model: ${model}. Error: ${error.message}`);
       lastError = error;
     }
   }
 
-  const finalError = new Error(lastError?.message || 'All Gemini models failed.');
+  const finalError = new Error(lastError?.message || 'All Groq models failed.');
   finalError.statusCode = lastError?.statusCode || 502;
-  console.error('[Gemini] All models exhausted. Final Error:', finalError.message);
+  console.error('[Groq] All models exhausted. Final Error:', finalError.message);
   throw finalError;
 }
 
-async function generateWithGemini(data) {
+async function generateWithGroq(data) {
   const prompt = buildStoryPrompt(data);
-  return executeGeminiWithRetry(prompt);
+  return executeGroqWithRetry(prompt);
 }
 
 async function generateStory(data) {
@@ -554,10 +555,10 @@ async function generateStory(data) {
       return n8nResponse.trim();
     }
   } catch (error) {
-    console.log('n8n failed, switching to Gemini...');
+    console.log('n8n failed, switching to Groq...');
   }
 
-  const story = await generateWithGemini(data);
+  const story = await generateWithGroq(data);
   return story;
 }
 
@@ -572,9 +573,9 @@ async function createAiContent({ type, prompt, input, sessionId }) {
   try {
     return await callN8nWebhook({ type, prompt, input, sessionId });
   } catch (error) {
-    if (fallbackMode === 'gemini' && process.env.GEMINI_API_KEY) {
-      console.log(`n8n failed for ${type}, falling back to Gemini...`);
-      return executeGeminiWithRetry(prompt);
+    if (fallbackMode === 'groq' && process.env.GROQ_API_KEY) {
+      console.log(`n8n failed for ${type}, falling back to Groq...`);
+      return executeGroqWithRetry(prompt);
     }
 
     if (fallbackMode === 'none') {
@@ -657,7 +658,7 @@ app.post('/api/helper-suggestions', async (req, res, next) => {
     Make the values specific and evocative.
     Return ONLY valid JSON. No markdown formatting.`;
 
-    const rawJson = await executeGeminiWithRetry(prompt);
+    const rawJson = await executeGroqWithRetry(prompt);
     // Cleanup in case Gemini adds markdown backticks
     const cleanJson = rawJson.replace(/```json|```/g, '').trim();
     res.json(JSON.parse(cleanJson));
