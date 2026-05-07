@@ -386,9 +386,11 @@ async function callN8nWebhook({ type, prompt, input, sessionId }) {
     if (error.code === 'ECONNREFUSED' || /fetch failed/i.test(error.message || '')) {
       const networkError = new Error('Cannot reach n8n webhook. Ensure n8n is running and webhook URL is correct.');
       networkError.statusCode = 502;
+      console.error('[n8n] Network Error:', error.message);
       throw networkError;
     }
 
+    console.error('[n8n] Unexpected Error:', error);
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -421,7 +423,8 @@ async function callN8N(data) {
     if (!response.ok) {
       const error = new Error(`n8n webhook failed with status ${response.status}. ${rawText}`.trim());
       error.statusCode = 502;
-      throw error;
+      console.error('[n8n] Unexpected Error:', error);
+    throw error;
     }
 
     let parsed;
@@ -449,6 +452,7 @@ async function callN8N(data) {
     if (error.code === 'ECONNREFUSED' || /fetch failed/i.test(error.message || '')) {
       const networkError = new Error('Cannot reach n8n webhook. Ensure n8n is running and webhook URL is correct.');
       networkError.statusCode = 502;
+      console.error('[n8n] Network Error:', error.message);
       throw networkError;
     }
 
@@ -514,20 +518,26 @@ async function callGeminiModel({ model, prompt }) {
 
 async function executeGeminiWithRetry(prompt) {
   const models = [GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS.filter((model) => model !== GEMINI_MODEL)];
+  const truncatedPrompt = prompt.length > 100 ? prompt.substring(0, 100) + '...' : prompt;
+
+  console.log(`[Gemini] Starting generation attempt. Prompt preview: "${truncatedPrompt}"`);
 
   let lastError;
   for (const model of models) {
     try {
+      console.log(`[Gemini] Trying model: ${model}`);
       const result = await callGeminiModel({ model, prompt });
-      console.log(`Generated with Gemini model: ${model}`);
+      console.log(`[Gemini] SUCCESS with model: ${model}`);
       return result;
     } catch (error) {
+      console.error(`[Gemini] FAILED with model: ${model}. Error: ${error.message}`);
       lastError = error;
     }
   }
 
   const finalError = new Error(lastError?.message || 'All Gemini models failed.');
   finalError.statusCode = lastError?.statusCode || 502;
+  console.error('[Gemini] All models exhausted. Final Error:', finalError.message);
   throw finalError;
 }
 
@@ -578,6 +588,7 @@ async function createAiContent({ type, prompt, input, sessionId }) {
 
 async function handleGeneration(req, res, next, config) {
   try {
+    console.log(`[API] Received ${config.type} request:`, JSON.stringify(req.body));
     ensureFields(req.body, config.requiredFields);
 
     const sessionId = getSessionId(req);
@@ -595,8 +606,10 @@ async function handleGeneration(req, res, next, config) {
       output: content
     });
 
+    console.log(`[API] ${config.type} generation successful for session: ${sessionId}`);
     res.json({ sessionId, content });
   } catch (error) {
+    console.error(`[API] ${config.type} generation failed:`, error.message);
     next(error);
   }
 }
@@ -714,6 +727,12 @@ app.use((req, _res, next) => {
 app.use((error, _req, res, _next) => {
   const statusCode = error.statusCode || 500;
   const message = error.message || 'Internal server error';
+
+  if (statusCode === 500) {
+    console.error('[Critical Error]:', error);
+  } else {
+    console.warn(`[Client/Service Error ${statusCode}]:`, message);
+  }
 
   res.status(statusCode).json({
     error: {
